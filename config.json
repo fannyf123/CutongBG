@@ -1,0 +1,8 @@
+{
+    "output_format": "png",
+    "headless": false,
+    "incognito": false,
+    "batch_size": 1,
+    "max_wait_seconds": 120,
+    "processing_hang_timeout": 300
+}

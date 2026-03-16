@@ -1,0 +1,4 @@
+selenium
+requests
+PySide6
+Pillow
