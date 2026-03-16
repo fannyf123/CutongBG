@@ -6,9 +6,9 @@ from typing import List
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QProgressBar, QFileDialog, QTextEdit,
-    QTabWidget, QFrame, QSizePolicy, QCheckBox, QSpinBox
+    QTabWidget, QCheckBox, QSpinBox
 )
-from PySide6.QtCore import Qt, QThread, Signal, QObject, QTimer
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QFont, QColor, QPalette
 
 from .background_process import ImageProcessor, ProgressSignal, FileUpdateSignal
@@ -17,8 +17,8 @@ from .logger import logger
 
 
 APP_NAME = "CutongBG"
-APP_VERSION = "1.0.0"
-ACCENT_COLOR = "#00C853"  # Green - representing clean/removed background
+APP_VERSION = "1.0.1"
+ACCENT_COLOR = "#00C853"
 BG_COLOR = "#1E1E2E"
 SURFACE_COLOR = "#2A2A3E"
 TEXT_COLOR = "#FFFFFF"
@@ -50,7 +50,7 @@ class DropArea(QLabel):
         self.setAcceptDrops(True)
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumHeight(180)
-        self.setText("🗑️  Seret gambar / folder ke sini\n\natau gunakan tombol di bawah")
+        self.setText("\U0001f5d1\ufe0f  Seret gambar / folder ke sini\n\natau gunakan tombol di bawah")
         self.setStyleSheet(f"""
             QLabel {{
                 border: 2px dashed {ACCENT_COLOR};
@@ -69,15 +69,10 @@ class DropArea(QLabel):
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-            self.setStyleSheet(self.styleSheet().replace(ACCENT_COLOR, "#00FF6E"))
-
-    def dragLeaveEvent(self, event):
-        self.setStyleSheet(self.styleSheet().replace("#00FF6E", ACCENT_COLOR))
 
     def dropEvent(self, event: QDropEvent):
         paths = [url.toLocalFile() for url in event.mimeData().urls()]
         self.files_dropped.emit(paths)
-        self.setStyleSheet(self.styleSheet().replace("#00FF6E", ACCENT_COLOR))
 
 
 class MainWindow(QMainWindow):
@@ -122,7 +117,7 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(16, 16, 16, 16)
 
         # Header
-        header = QLabel(f"✂️  {APP_NAME}  —  Hapus Background Otomatis via Picsart")
+        header = QLabel(f"\u2702\ufe0f  {APP_NAME}  \u2014  Hapus Background Otomatis via Picsart")
         header.setAlignment(Qt.AlignCenter)
         header.setFont(QFont("Segoe UI", 14, QFont.Bold))
         header.setStyleSheet(f"color: {ACCENT_COLOR}; padding: 6px;")
@@ -136,7 +131,7 @@ class MainWindow(QMainWindow):
             QTabBar::tab:selected {{ background: {ACCENT_COLOR}; color: #000; font-weight: bold; }}
         """)
 
-        # --- Tab: Drop / Open ---
+        # --- Tab: Pilih Gambar ---
         drop_tab = QWidget()
         drop_layout = QVBoxLayout(drop_tab)
         drop_layout.setSpacing(10)
@@ -146,9 +141,9 @@ class MainWindow(QMainWindow):
         drop_layout.addWidget(self.drop_area)
 
         btn_row = QHBoxLayout()
-        self.btn_open_files = QPushButton("📂 Open File(s)")
-        self.btn_open_folder = QPushButton("📁 Open Folder")
-        self.btn_clear = QPushButton("🗑️ Clear")
+        self.btn_open_files = QPushButton("\U0001f4c2 Open File(s)")
+        self.btn_open_folder = QPushButton("\U0001f4c1 Open Folder")
+        self.btn_clear = QPushButton("\U0001f5d1\ufe0f Clear")
         for btn in (self.btn_open_files, self.btn_open_folder, self.btn_clear):
             btn.setFixedHeight(36)
             btn.setStyleSheet(self._btn_style())
@@ -162,49 +157,59 @@ class MainWindow(QMainWindow):
         self.lbl_selected.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px;")
         self.lbl_selected.setAlignment(Qt.AlignCenter)
         drop_layout.addWidget(self.lbl_selected)
+        tabs.addTab(drop_tab, "\U0001f5bc\ufe0f Pilih Gambar")
 
-        tabs.addTab(drop_tab, "🖼️ Pilih Gambar")
-
-        # --- Tab: Settings ---
+        # --- Tab: Pengaturan ---
         settings_tab = QWidget()
         s_layout = QVBoxLayout(settings_tab)
-        s_layout.setSpacing(12)
+        s_layout.setSpacing(14)
         s_layout.setAlignment(Qt.AlignTop)
 
         self.chk_headless = QCheckBox("Headless mode (browser tidak terlihat)")
         self.chk_headless.setChecked(self.config_manager.get_headless())
         self.chk_headless.setStyleSheet(f"color: {TEXT_COLOR};")
-        self.chk_headless.toggled.connect(lambda v: self.config_manager.set_headless(v))
+        self.chk_headless.toggled.connect(self._on_headless_changed)
         s_layout.addWidget(self.chk_headless)
 
         self.chk_incognito = QCheckBox("Incognito mode")
         self.chk_incognito.setChecked(self.config_manager.get_incognito())
         self.chk_incognito.setStyleSheet(f"color: {TEXT_COLOR};")
-        self.chk_incognito.toggled.connect(lambda v: self.config_manager.set_incognito(v))
+        self.chk_incognito.toggled.connect(self._on_incognito_changed)
         s_layout.addWidget(self.chk_incognito)
 
+        # FIX: batch_size row dengan handler eksplisit
         batch_row = QHBoxLayout()
         batch_lbl = QLabel("Batch size (file diproses serentak):")
         batch_lbl.setStyleSheet(f"color: {TEXT_COLOR};")
         self.spin_batch = QSpinBox()
-        self.spin_batch.setRange(1, 5)
+        self.spin_batch.setRange(1, 10)
         self.spin_batch.setValue(self.config_manager.get_batch_size())
-        self.spin_batch.setStyleSheet(f"background: {SURFACE_COLOR}; color: {TEXT_COLOR}; border: 1px solid #555; border-radius: 4px; padding: 4px;")
-        self.spin_batch.valueChanged.connect(lambda v: self.config_manager.set_batch_size(v))
+        self.spin_batch.setFixedWidth(80)
+        self.spin_batch.setStyleSheet(
+            f"background: {SURFACE_COLOR}; color: {TEXT_COLOR};"
+            f" border: 1px solid #666; border-radius: 4px; padding: 4px;"
+        )
+        # FIX: gunakan valueChanged dengan named method agar tidak di-garbage-collect
+        self.spin_batch.valueChanged.connect(self._on_batch_size_changed)
         batch_row.addWidget(batch_lbl)
         batch_row.addWidget(self.spin_batch)
         batch_row.addStretch()
         s_layout.addLayout(batch_row)
 
-        note = QLabel("Output selalu PNG (transparan) — background dihapus.")
+        # Label info batch size saat ini
+        self.lbl_batch_info = QLabel(f"Batch size aktif: {self.spin_batch.value()}")
+        self.lbl_batch_info.setStyleSheet(f"color: {ACCENT_COLOR}; font-size: 11px;")
+        s_layout.addWidget(self.lbl_batch_info)
+
+        note = QLabel("Output selalu PNG (transparan) \u2014 background dihapus.")
         note.setStyleSheet(f"color: {MUTED_COLOR}; font-size: 11px; font-style: italic;")
         s_layout.addWidget(note)
 
-        tabs.addTab(settings_tab, "⚙️ Pengaturan")
+        tabs.addTab(settings_tab, "\u2699\ufe0f Pengaturan")
         main_layout.addWidget(tabs)
 
-        # Action button
-        self.btn_start = QPushButton("✂️  Hapus Background")
+        # Tombol Hapus Background
+        self.btn_start = QPushButton("\u2702\ufe0f  Hapus Background")
         self.btn_start.setFixedHeight(48)
         self.btn_start.setFont(QFont("Segoe UI", 12, QFont.Bold))
         self.btn_start.setStyleSheet(f"""
@@ -219,7 +224,7 @@ class MainWindow(QMainWindow):
         self.btn_start.clicked.connect(self._start_processing)
         main_layout.addWidget(self.btn_start)
 
-        self.btn_stop = QPushButton("⏹️  Stop")
+        self.btn_stop = QPushButton("\u23f9\ufe0f  Stop")
         self.btn_stop.setFixedHeight(36)
         self.btn_stop.setStyleSheet(f"""
             QPushButton {{
@@ -234,7 +239,7 @@ class MainWindow(QMainWindow):
         self.btn_stop.clicked.connect(self._stop_processing)
         main_layout.addWidget(self.btn_stop)
 
-        # Progress
+        # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(18)
         self.progress_bar.setStyleSheet(f"""
@@ -278,9 +283,29 @@ class MainWindow(QMainWindow):
             QPushButton:hover {{ background: #3A3A5E; }}
         """
 
+    # ------------------------------------------------------------------
+    # Event handlers pengaturan
+    # ------------------------------------------------------------------
+    def _on_headless_changed(self, value: bool):
+        self.config_manager.set_headless(value)
+        self._log(f"Headless mode: {'aktif' if value else 'nonaktif'}")
+
+    def _on_incognito_changed(self, value: bool):
+        self.config_manager.set_incognito(value)
+        self._log(f"Incognito mode: {'aktif' if value else 'nonaktif'}")
+
+    def _on_batch_size_changed(self, value: int):
+        """FIX: simpan ke config dan update label info."""
+        self.config_manager.set_batch_size(value)
+        self.lbl_batch_info.setText(f"Batch size aktif: {value}")
+        self._log(f"Batch size diubah ke: {value}")
+
+    # ------------------------------------------------------------------
+    # File selection
+    # ------------------------------------------------------------------
     def _on_paths_received(self, paths: List[str]):
         self.selected_paths.extend(paths)
-        self.selected_paths = list(dict.fromkeys(self.selected_paths))  # dedupe
+        self.selected_paths = list(dict.fromkeys(self.selected_paths))
         count = len(self.selected_paths)
         self.lbl_selected.setText(f"{count} item dipilih")
         self._log(f"Ditambahkan: {', '.join(Path(p).name for p in paths)}")
@@ -305,11 +330,16 @@ class MainWindow(QMainWindow):
 
     def _log(self, message: str):
         self.log_area.append(message)
-        self.log_area.verticalScrollBar().setValue(self.log_area.verticalScrollBar().maximum())
+        self.log_area.verticalScrollBar().setValue(
+            self.log_area.verticalScrollBar().maximum()
+        )
 
+    # ------------------------------------------------------------------
+    # Processing
+    # ------------------------------------------------------------------
     def _start_processing(self):
         if not self.selected_paths:
-            self.lbl_status.setText("⚠️ Pilih file atau folder terlebih dahulu!")
+            self.lbl_status.setText("\u26a0\ufe0f Pilih file atau folder terlebih dahulu!")
             return
 
         if self.worker_thread and self.worker_thread.isRunning():
@@ -323,6 +353,11 @@ class MainWindow(QMainWindow):
         self.file_signal = FileUpdateSignal()
         self.file_signal.file_update.connect(self._on_file_update)
 
+        # FIX: batch_size diambil langsung dari spin_batch saat tombol diklik
+        # dan dipass ke constructor (bukan di-set setelah object dibuat)
+        current_batch_size = self.spin_batch.value()
+        self._log(f"Memulai proses dengan batch_size={current_batch_size}")
+
         self.processor = ImageProcessor(
             chromedriver_path=driver_path,
             progress_signal=self.progress_signal,
@@ -330,8 +365,8 @@ class MainWindow(QMainWindow):
             config_manager=self.config_manager,
             headless=self.chk_headless.isChecked(),
             incognito=self.chk_incognito.isChecked(),
+            batch_size=current_batch_size,  # FIX: pass ke constructor
         )
-        self.processor.batch_size = self.spin_batch.value()
 
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
@@ -359,14 +394,17 @@ class MainWindow(QMainWindow):
 
     def _on_file_update(self, file_path: str, done: bool):
         if done:
-            self._log("✅ Semua file selesai diproses.")
+            self._log("\u2705 Semua file selesai diproses.")
         elif file_path:
-            self._log(f"⏳ Memproses: {Path(file_path).name}")
+            self._log(f"\u23f3 Memproses: {Path(file_path).name}")
 
     def _on_finished(self):
         if self.processor:
             stats = self.processor.get_statistics()
-            msg = f"✅ Selesai! Berhasil: {stats['total_processed']}, Gagal: {stats['total_failed']}"
+            msg = (
+                f"\u2705 Selesai! Berhasil: {stats['total_processed']}, "
+                f"Gagal: {stats['total_failed']}"
+            )
             self.lbl_status.setText(msg)
             self._log(msg)
             self._log(f"Durasi: {stats['total_duration']:.1f} detik")
@@ -375,7 +413,7 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
 
     def _on_error(self, error_msg: str):
-        self.lbl_status.setText(f"❌ Error: {error_msg}")
+        self.lbl_status.setText(f"\u274c Error: {error_msg}")
         self._log(f"Error: {error_msg}")
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
